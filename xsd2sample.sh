@@ -1,38 +1,25 @@
 #!/usr/bin/env bash
 #
-# Generate a sample XML instance from an XSD schema and validate it.
-# Usage: ./xsd2sample.sh <schema.xsd> [output.xml]
+# Generate sample XML instance(s) from XSD schema(s) and validate.
+# Usage:
+#   ./xsd2sample.sh <schema.xsd> [output.xml]   # single file
+#   ./xsd2sample.sh <folder>                    # all .xsd in folder
 #
-# If output.xml is omitted, writes to <basename>.xml in the same
-# directory as the XSD (e.g. cc029.xsd → cc029.xml) and validates.
+# Single file: if output.xml is omitted, writes <basename>.xml in the
+# same directory as this script.
+# Folder: processes every .xsd in the given directory; each output is
+# <basename>.xml next to the script. Reports pass/fail per file.
 #
 
 set -e
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <schema.xsd> [output.xml]" >&2
-  echo "  Generates a sample XML from the XSD and validates it." >&2
+  echo "Usage: $0 <schema.xsd> [output.xml]  OR  $0 <folder>" >&2
+  echo "  Single file: generate one XML from the XSD and validate." >&2
+  echo "  Folder: process every .xsd in the directory; output each to <basename>.xml next to this script." >&2
   exit 1
 fi
 
-XSD="$1"
-OUTPUT="${2:-}"
-
-if [[ ! -f "$XSD" ]]; then
-  echo "Error: Schema file not found: $XSD" >&2
-  exit 1
-fi
-
-# Resolve to absolute path so includes resolve from the schema's directory
-XSD_DIR="$(cd "$(dirname "$XSD")" && pwd)"
-XSD_ABS="${XSD_DIR}/$(basename "$XSD")"
-
-if [[ -z "$OUTPUT" ]]; then
-  BASE="$(basename "$XSD" .xsd)"
-  OUTPUT="${XSD_DIR}/${BASE}.xml"
-fi
-
-# Script directory: find xsd2sample.py next to this script or in current dir
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 GENERATOR="${SCRIPT_DIR}/xsd2sample.py"
 
@@ -51,13 +38,64 @@ if ! command -v xmllint &>/dev/null; then
   exit 1
 fi
 
-echo "Generating sample XML from $XSD_ABS ..."
-python3 "$GENERATOR" "$XSD_ABS" -o "$OUTPUT"
+process_one() {
+  local XSD="$1"
+  local OUTPUT="${2:-}"
+  local XSD_DIR XSD_ABS BASE
 
-echo "Validating $OUTPUT against $XSD_ABS ..."
-if xmllint --noout --schema "$XSD_ABS" "$OUTPUT"; then
-  echo "OK: $OUTPUT validates against the schema."
+  XSD_DIR="$(cd "$(dirname "$XSD")" && pwd)"
+  XSD_ABS="${XSD_DIR}/$(basename "$XSD")"
+
+  if [[ -z "$OUTPUT" ]]; then
+    BASE="$(basename "$XSD" .xsd)"
+    OUTPUT="${SCRIPT_DIR}/${BASE}.xml"
+  fi
+
+  echo "Generating sample XML from $XSD_ABS ..."
+  if ! python3 "$GENERATOR" "$XSD_ABS" -o "$OUTPUT"; then
+    echo "Error: Failed to generate $OUTPUT" >&2
+    return 1
+  fi
+
+  echo "Validating $OUTPUT against $XSD_ABS ..."
+  if xmllint --noout --schema "$XSD_ABS" "$OUTPUT"; then
+    echo "OK: $OUTPUT validates against the schema."
+    return 0
+  else
+    echo "Error: $OUTPUT did not validate." >&2
+    return 1
+  fi
+}
+
+ARG="$1"
+OUTPUT_ARG="${2:-}"
+
+if [[ -d "$ARG" ]]; then
+  # Folder: process all .xsd files
+  DIR="$(cd "$ARG" && pwd)"
+  count=0
+  pass=0
+  fail=0
+  for xsd in "$DIR"/*.xsd; do
+    [[ -f "$xsd" ]] || continue
+    ((count++)) || true
+    if process_one "$xsd" ""; then
+      ((pass++)) || true
+    else
+      ((fail++)) || true
+    fi
+    echo "---"
+  done
+  if [[ $count -eq 0 ]]; then
+    echo "No .xsd files found in $DIR" >&2
+    exit 1
+  fi
+  echo "Done: $pass passed, $fail failed (of $count schemas)."
+  [[ $fail -eq 0 ]]
+elif [[ -f "$ARG" ]]; then
+  # Single file
+  process_one "$ARG" "$OUTPUT_ARG"
 else
-  echo "Error: Generated XML did not validate." >&2
+  echo "Error: Not a file or directory: $ARG" >&2
   exit 1
 fi

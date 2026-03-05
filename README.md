@@ -10,24 +10,27 @@ Generate valid sample XML from XSD schemas. The script follows `xs:include` (and
 ## Quick start
 
 ```bash
+# Single schema
 ./xsd2sample.sh DDNTA_APP/order.xsd
-# Creates DDNTA_APP/order.xml and validates it.
-
-./xsd2sample.sh DDNTA_APP/cc029.xsd
-# Creates DDNTA_APP/cc029.xml (input basename + .xml).
+# Creates order.xml in the same directory as xsd2sample.sh (not inside DDNTA_APP).
 
 ./xsd2sample.sh DDNTA_APP/order.xsd custom.xml
 # Writes to custom.xml (relative to cwd) and validates.
+
+# All schemas in a folder
+./xsd2sample.sh ddnta
+# Processes every .xsd in ddnta/; each output is <basename>.xml next to the script. Reports pass/fail per file.
 ```
 
 ## Usage
 
 | Command | Result |
 |--------|--------|
-| `./xsd2sample.sh <path/file.xsd>` | Output: `<path/file>.xml` (same folder as the XSD); then validate. |
-| `./xsd2sample.sh <path/file.xsd> <out.xml>` | Output: `<out.xml>`; then validate. |
+| `./xsd2sample.sh <path/file.xsd>` | One file: output `<basename>.xml` next to the script; validate. |
+| `./xsd2sample.sh <path/file.xsd> <out.xml>` | One file: output to `<out.xml>`; validate. |
+| `./xsd2sample.sh <folder>` | **Folder:** process every `.xsd` in that directory; each → `<basename>.xml` next to the script. Pass/fail reported per file; exit non‑zero if any fail. |
 
-You can pass a path that includes a folder, e.g. `DDNTA_APP/order.xsd`. The script resolves the path so that `xs:include` (e.g. `ctypes.xsd`) are loaded from the XSD’s directory.
+You can pass a path that includes a folder, e.g. `DDNTA_APP/order.xsd`. The generated XML is written next to the bash script unless you pass a second argument (single-file mode only).
 
 ## Python script (optional)
 

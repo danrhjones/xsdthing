@@ -83,16 +83,156 @@ def resolve_type_ref(type_ref: str, ns_map: dict, types: dict) -> tuple:
         return (None, None)
 
 
-def simple_type_sample(st_elem) -> str:
-    """Return a sample value for a simpleType (restriction base)."""
+def simple_type_sample(st_elem, types: dict) -> str:
+    """Return a sample value for a simpleType (enumeration first, then restriction base/pattern/length)."""
+    if st_elem is None:
+        return "sample"
+    # Prefer first xs:enumeration value if present
+    for enum in st_elem.findall(f".//{{{XS}}}enumeration"):
+        val = enum.get("value")
+        if val is not None:
+            return val
+    # Resolve restriction base and facets
     base = None
+    restriction = None
     for r in st_elem.findall(f".//{{{XS}}}restriction"):
         base = r.get("base")
         if base:
+            restriction = r
             break
     if not base:
         return "sample"
-    base = base.split("}")[-1] if "}" in base else base
+    base_local = base.split("}")[-1] if "}" in base else base
+
+    # Check length/maxLength/pattern facets for common cases (before base lookup)
+    if restriction is not None:
+        length_elem = restriction.find(f"{{{XS}}}length")
+        max_length_elem = restriction.find(f"{{{XS}}}maxLength")
+        pattern_elems = restriction.findall(f"{{{XS}}}pattern")
+        length_val = length_elem.get("value") if length_elem is not None else None
+        max_length_val = max_length_elem.get("value") if max_length_elem is not None else None
+
+        # Pattern-based samples first (before maxLength, so email etc. get correct value)
+        for pattern_elem in pattern_elems:
+            pattern_val = pattern_elem.get("value") or ""
+            # Email pattern (e.g. \P{Z}[^@]*@[^\.]+\..*\P{Z})
+            if "@" in pattern_val:
+                return "user@example.com"
+            # MRN NCTS-P5 (prefer over legacy when type has both patterns)
+            if "[J-M][0-9]" in pattern_val and "[A-Z0-9]{12}" in pattern_val:
+                return "24GB123456789012K1"
+        # Second pass: legacy MRN and GRN (only if NCTS-P5 not chosen)
+        for pattern_elem in pattern_elems:
+            pattern_val = pattern_elem.get("value") or ""
+            if "[A-Z0-9]{13}[0-9]" in pattern_val:
+                return "24AB1234567890123"
+            if "[0-9]{2}[A-Z]{2}[A-Z0-9]{12}[0-9]" in pattern_val:
+                return "24GB1234567890123"
+        for pattern_elem in pattern_elems:
+            pattern_val = pattern_elem.get("value") or ""
+            # [A-Z]{2}[!-~]{1,15} (identificationNumber)
+            if "[A-Z]{2}[!-~]" in pattern_val:
+                return "GB12345678901"
+            # [A-Za-z]{3} (currency)
+            if pattern_val.strip() == "[A-Za-z]{3}" or (length_val == "3" and "[A-Za-z]" in pattern_val):
+                return "EUR"
+            # [A-Za-z]{2}
+            if length_val == "2" and ("[A-Z]" in pattern_val or "[A-Za-z]" in pattern_val):
+                return "GB"
+            # [A-Za-z]{1}
+            if pattern_val == "[A-Za-z]{1}" or (length_val == "1" and "[A-Za-z]" in pattern_val):
+                return "A"
+            # [0-9]{1}
+            if pattern_val == "[0-9]{1}":
+                return "1"
+            # [0-9]{1,2}
+            if "[0-9]{1,2}" in pattern_val and "]" not in pattern_val.replace("[0-9]{1,2}", ""):
+                return "1"
+            # [0-9]{2}
+            if pattern_val == "[0-9]{2}":
+                return "00"
+            # .{3} or length 3
+            if length_val == "3" and ".{3}" in pattern_val:
+                return "000"
+            if pattern_val == ".{3}":
+                return "000"
+            # .{4} .{5} .{8} .{9} .{2} (fixed length)
+            if pattern_val == ".{4}":
+                return "1234"
+            if pattern_val == ".{5}":
+                return "12345"
+            if pattern_val == ".{8}":
+                return "12345678"
+            if pattern_val == ".{9}":
+                return "123456789"
+            if pattern_val == ".{2}":
+                return "01"
+            # [A-Za-z]{1,3}
+            if "[A-Za-z]{1,3}" in pattern_val:
+                return "A"
+            # [A-Z]* (letters only, can be empty - use "A")
+            if pattern_val == "[A-Z]*":
+                return "A"
+            # .{1,4} .{1,5} etc
+            if pattern_val in (".{1,4}", ".{1,5}"):
+                return "1"
+            if ".{1," in pattern_val and "}" in pattern_val:
+                return "1"
+            # TIRCarnetNumber-style: ([1-9][0-9]{0,6}|...|25000000|...)
+            if "25000000" in pattern_val or "[1-9][0-9]{0,6}" in pattern_val:
+                return "1"
+            # latitude/longitude
+            if "latitude" in str(st_elem).lower() or "[+-]?([0-8]?[0-9]" in pattern_val:
+                return "51.50722"
+            if "longitude" in str(st_elem).lower() or "180.000000" in pattern_val:
+                return "0.12750"
+
+        if length_val == "2" and any(("[A-Z]" in (p.get("value") or "") or "[A-Za-z]" in (p.get("value") or "")) for p in pattern_elems):
+            return "GB"
+        if length_val == "8" and any("[A-Z]{2}" in (p.get("value") or "") for p in pattern_elems):
+            return "GB123456"
+
+        # Pattern 0\.\d*[1-9]\d* (decimal with at least one non-zero after point) - before fractionDigits
+        if any("0." in (p.get("value") or "") and "[1-9]" in (p.get("value") or "") for p in pattern_elems):
+            return "0.1"
+
+        # fractionDigits: decimal with given decimal places
+        frac_elem = restriction.find(f"{{{XS}}}fractionDigits")
+        if frac_elem is not None:
+            try:
+                f = int(frac_elem.get("value") or "0")
+                if f == 6:
+                    return "0.000000"
+                if f == 2:
+                    return "0.00"
+            except ValueError:
+                pass
+
+        # maxLength: use a string that fits (after pattern checks, so email etc. already handled)
+        if max_length_val is not None:
+            try:
+                n = int(max_length_val)
+                if n <= 4:
+                    return "1" * n if n > 0 else "0"
+                if n <= 6:
+                    return "123456"[:n]
+                return "1" + "0" * (n - 1) if n <= 22 else "1"
+            except ValueError:
+                pass
+
+        # length=1
+        if length_val == "1":
+            if any("[0-9]" in (p.get("value") or "") for p in pattern_elems):
+                return "1"
+            if any("[A-Za-z]" in (p.get("value") or "") for p in pattern_elems) or any("[A-Z0-9]" in (p.get("value") or "") for p in pattern_elems):
+                return "A"
+            return "1"
+
+    if restriction is not None:
+        min_inc = restriction.find(f"{{{XS}}}minInclusive")
+        if min_inc is not None and min_inc.get("value") == "1" and base_local in ("integer", "decimal"):
+            return "1"
+    # Known XSD built-in and custom base type names
     samples = {
         "string": "sample",
         "normalizedString": "sample",
@@ -109,8 +249,24 @@ def simple_type_sample(st_elem) -> str:
         "time": "12:00:00",
         "positiveInteger": "1",
         "nonNegativeInteger": "0",
+        "DateTimeType": "2025-03-05T12:00:00",
+        "DateType": "2025-03-05",
+        "DecimalWithZero_16_2": "0.00",
+        "DecimalWithZero_16_6": "0.000000",
+        "NumericWithoutZero_5": "1",
+        "NumericWithoutZero_1": "1",
+        "NumericWithZero_9": "1",
+        "NumericWithZero_4": "1",
+        "NumericWithZero_8": "1",
     }
-    return samples.get(base, "sample")
+    if base_local in samples:
+        return samples[base_local]
+    # Resolve custom base type (e.g. DateTimeType, MessageTypes, MRNType)
+    if types and base_local in types:
+        base_elem, _, _ = types[base_local]
+        if get_tag(base_elem) == "simpleType":
+            return simple_type_sample(base_elem, types)
+    return "sample"
 
 
 def generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level=0):
@@ -121,7 +277,7 @@ def generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, el
     if tag == "complexType":
         return generate_complex_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level)
     if tag == "simpleType":
-        return [("__text__", simple_type_sample(type_elem), {}, False)]
+        return [("__text__", simple_type_sample(type_elem, types), {}, False)]
     return []
 
 
@@ -133,7 +289,18 @@ def generate_complex_type(ct_elem, type_ns, types, groups, elements, target_ns, 
         if not aname:
             continue
         default = attr.get("default") or attr.get("fixed")
-        out.append(("__attr__", aname, default or "sample"))
+        if default is not None:
+            out.append(("__attr__", aname, default))
+        else:
+            type_ref = attr.get("type")
+            if type_ref:
+                type_elem, _ = resolve_type_ref(type_ref, {}, types)
+                if type_elem and get_tag(type_elem) == "simpleType":
+                    out.append(("__attr__", aname, simple_type_sample(type_elem, types)))
+                else:
+                    out.append(("__attr__", aname, "sample"))
+            else:
+                out.append(("__attr__", aname, "sample"))
     # content: sequence, choice, all, group
     for container in ct_elem:
         ctag = get_tag(container)
