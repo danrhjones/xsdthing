@@ -124,6 +124,11 @@ def simple_type_sample(st_elem, types: dict) -> str:
         # Second pass: legacy MRN and GRN (only if NCTS-P5 not chosen)
         for pattern_elem in pattern_elems:
             pattern_val = pattern_elem.get("value") or ""
+            # Transit MRN ...{12}[A-E][0-9] (must be before legacy {13}[0-9] when type has both)
+            if "[A-E][0-9]" in pattern_val and "[A-Z0-9]{12}" in pattern_val:
+                return "24AB123456789012A0"
+        for pattern_elem in pattern_elems:
+            pattern_val = pattern_elem.get("value") or ""
             if "[A-Z0-9]{13}[0-9]" in pattern_val:
                 return "24AB1234567890123"
             if "[0-9]{2}[A-Z]{2}[A-Z0-9]{12}[0-9]" in pattern_val:
@@ -173,6 +178,9 @@ def simple_type_sample(st_elem, types: dict) -> str:
             # [A-Z]* (letters only, can be empty - use "A")
             if pattern_val == "[A-Z]*":
                 return "A"
+            # [A-Z0-9]* (alphanumeric capital, can be empty - use "A")
+            if pattern_val == "[A-Z0-9]*":
+                return "A"
             # .{1,4} .{1,5} etc
             if pattern_val in (".{1,4}", ".{1,5}"):
                 return "1"
@@ -181,6 +189,27 @@ def simple_type_sample(st_elem, types: dict) -> str:
             # TIRCarnetNumber-style: ([1-9][0-9]{0,6}|...|25000000|...)
             if "25000000" in pattern_val or "[1-9][0-9]{0,6}" in pattern_val:
                 return "1"
+            # ENS MRN: ([2][4-9]|[3-9][0-9])[A-Z]{2}[A-Z0-9]{11}[C][T][0-9]
+            if "[C][T][0-9]" in pattern_val and "[A-Z]{2}[A-Z0-9]{11}" in pattern_val:
+                return "24GB12345678901CT0"
+            # .{19} (e.g. dateTime string length 19)
+            if pattern_val == ".{19}":
+                return "2025-03-05T12:00:00"
+            # Year [2][0][1-9][0-9] (YYYY 2010-2099)
+            if "[2][0][1-9][0-9]" in pattern_val or pattern_val == "[2][0][1-9][0-9]":
+                return "2025"
+            # [A-Za-z]{2} (two letters, e.g. country/language code)
+            if pattern_val == "[A-Za-z]{2}":
+                return "GB"
+            # .{1} single character
+            if pattern_val == ".{1}":
+                return "1"
+            # .{10} (e.g. date YYYY-MM-DD)
+            if pattern_val == ".{10}":
+                return "2025-03-05"
+            # [!-~]{1,16}E (ends with E, 1-16 printable)
+            if "[!-~]" in pattern_val and pattern_val.endswith("E"):
+                return "1E"
             # latitude/longitude
             if "latitude" in str(st_elem).lower() or "[+-]?([0-8]?[0-9]" in pattern_val:
                 return "51.50722"
@@ -193,7 +222,11 @@ def simple_type_sample(st_elem, types: dict) -> str:
             return "GB123456"
 
         # Pattern 0\.\d*[1-9]\d* (decimal with at least one non-zero after point) - before fractionDigits
-        if any("0." in (p.get("value") or "") and "[1-9]" in (p.get("value") or "") for p in pattern_elems):
+        # XML may store as "0\.\d*[1-9]\d*" so "0." is not literal
+        if any(
+            ("0." in (pv := (p.get("value") or "")) or "0\\." in pv) and "[1-9]" in pv
+            for p in pattern_elems
+        ):
             return "0.1"
 
         # fractionDigits: decimal with given decimal places
@@ -220,7 +253,18 @@ def simple_type_sample(st_elem, types: dict) -> str:
             except ValueError:
                 pass
 
-        # length=1
+        # length=1 (and other lengths): if we have a custom base and no local pattern, recurse first
+        if length_val and base_local in types:
+            base_elem, _, _ = types[base_local]
+            if get_tag(base_elem) == "simpleType":
+                try:
+                    n = int(length_val)
+                    base_val = simple_type_sample(base_elem, types)
+                    if len(base_val) >= n:
+                        return base_val[:n]
+                    return (base_val + (base_val[0] if base_val else "A") * n)[:n]
+                except ValueError:
+                    pass
         if length_val == "1":
             if any("[0-9]" in (p.get("value") or "") for p in pattern_elems):
                 return "1"
@@ -247,17 +291,28 @@ def simple_type_sample(st_elem, types: dict) -> str:
         "date": "2025-03-05",
         "dateTime": "2025-03-05T12:00:00",
         "time": "12:00:00",
+        "base64Binary": "AQIDBA==",
         "positiveInteger": "1",
         "nonNegativeInteger": "0",
         "DateTimeType": "2025-03-05T12:00:00",
         "DateType": "2025-03-05",
         "DecimalWithZero_16_2": "0.00",
         "DecimalWithZero_16_6": "0.000000",
+        "DecimalWithoutZero_16_2": "0.01",
+        "DecimalWithoutZero_16_6": "0.1",
         "NumericWithoutZero_5": "1",
         "NumericWithoutZero_1": "1",
+        "NumericWithoutZero_8": "1",
+        "NumericWithoutZero_3": "1",
         "NumericWithZero_9": "1",
         "NumericWithZero_4": "1",
         "NumericWithZero_8": "1",
+        "NumericWithZero_3": "1",
+        "DeclarationGoodsItemNumberType": "1",
+        "DeclarationGoodsItemNumberType_WithZero": "0",
+        "AES-P1_DeclarationGoodsItemNumberType": "1",
+        "NCTS-P5_DeclarationGoodsItemNumberType": "1",
+        "Base64Binary": "AQIDBA==",
     }
     if base_local in samples:
         return samples[base_local]

@@ -78,6 +78,11 @@ if [[ -d "$ARG" ]]; then
   fail=0
   for xsd in "$DIR"/*.xsd; do
     [[ -f "$xsd" ]] || continue
+    base="$(basename "$xsd" .xsd)"
+    # Skip support/library schemas that have no root element (cannot generate a single document)
+    case "$base" in
+      ctypes|doc|htypes|stypes|tcl) continue ;;
+    esac
     ((count++)) || true
     if process_one "$xsd" ""; then
       ((pass++)) || true
