@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ncts:CC004C xmlns:ncts="http://ncts.dgtaxud.ec" PhaseID="60.4.16">
+  <TransitOperation>
+    <TransitOperationCode>T1</TransitOperationCode>
+  </TransitOperation>
+  <CustomsOfficeOfDeparture>
+    <ReferenceNumber>GB000060</ReferenceNumber>
+  </CustomsOfficeOfDeparture>
+  <HolderOfTheTransitProcedure>
+    <Name>ACME Ltd</Name>
+  </HolderOfTheTransitProcedure>
+</ncts:CC004C>

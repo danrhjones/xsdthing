@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://ncts.dgtaxud.ec"
+           xmlns:t="http://ncts.dgtaxud.ec"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+  <!-- Placeholder schema included by order.xsd; add shared types here if needed. -->
+</xs:schema>

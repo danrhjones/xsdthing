@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://ncts.dgtaxud.ec"
+           xmlns:t="http://ncts.dgtaxud.ec"
+           elementFormDefault="unqualified"
+           attributeFormDefault="unqualified">
+
+  <!-- Group required by order.xsd (CC004C) -->
+  <xs:group name="MESSAGE">
+    <xs:sequence/>
+  </xs:group>
+
+  <xs:simpleType name="phaseIDtype">
+    <xs:restriction base="xs:string"/>
+  </xs:simpleType>
+
+  <xs:complexType name="TransitOperationType01">
+    <xs:sequence>
+      <xs:element name="TransitOperationCode" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="CustomsOfficeOfDepartureType03">
+    <xs:sequence>
+      <xs:element name="ReferenceNumber" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="HolderOfTheTransitProcedureType20">
+    <xs:sequence>
+      <xs:element name="TIN" type="xs:string" minOccurs="0"/>
+      <xs:element name="Name" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Reusable address type (elements have default sample data) -->
+  <xs:complexType name="AddressType">
+    <xs:sequence>
+      <xs:element name="street" type="xs:string" default="123 Example Street"/>
+      <xs:element name="city" type="xs:string" default="Anytown"/>
+      <xs:element name="state" type="xs:string" minOccurs="0" default="CA"/>
+      <xs:element name="postalCode" type="xs:string" default="12345"/>
+      <xs:element name="country" type="xs:string" default="USA"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <!-- Reusable person/contact type (elements have default sample data) -->
+  <xs:complexType name="PersonType">
+    <xs:sequence>
+      <xs:element name="firstName" type="xs:string" default="Jane"/>
+      <xs:element name="lastName" type="xs:string" default="Doe"/>
+      <xs:element name="email" type="xs:string" default="jane.doe@example.com"/>
+      <xs:element name="phone" type="xs:string" minOccurs="0" default="+1-555-0100"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:element name="address" type="t:AddressType"/>
+  <xs:element name="person" type="t:PersonType"/>
+
+</xs:schema>
