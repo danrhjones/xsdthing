@@ -15,42 +15,169 @@
   </xs:simpleType>
 
   <xs:complexType name="TransitOperationType01">
+    <xs:annotation>
+      <xs:documentation>
+        <usedBy>Used by messages: CC004C</usedBy>
+      </xs:documentation>
+    </xs:annotation>
     <xs:sequence>
-      <xs:element name="TransitOperationCode" type="xs:string"/>
+      <xs:element name="TransitOperationCode" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Transit operation code" />
+            <format value="an..5" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
     </xs:sequence>
   </xs:complexType>
 
   <xs:complexType name="CustomsOfficeOfDepartureType03">
+    <xs:annotation>
+      <xs:documentation>
+        <usedBy>Used by messages: CC004C</usedBy>
+      </xs:documentation>
+    </xs:annotation>
     <xs:sequence>
-      <xs:element name="ReferenceNumber" type="xs:string"/>
+      <xs:element name="ReferenceNumber" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Customs office reference number" />
+            <format value="an8" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
     </xs:sequence>
   </xs:complexType>
 
   <xs:complexType name="HolderOfTheTransitProcedureType20">
+    <xs:annotation>
+      <xs:documentation>
+        <usedBy>Used by messages: CC004C</usedBy>
+      </xs:documentation>
+    </xs:annotation>
     <xs:sequence>
-      <xs:element name="TIN" type="xs:string" minOccurs="0"/>
-      <xs:element name="Name" type="xs:string"/>
+      <xs:element name="TIN" type="xs:string" minOccurs="0">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Trader identification number" />
+            <format value="an..17" />
+            <optionality value="O" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="Name" type="xs:string">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Name" />
+            <format value="an..70" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
     </xs:sequence>
   </xs:complexType>
 
-  <!-- Reusable address type (elements have default sample data) -->
   <xs:complexType name="AddressType">
+    <xs:annotation>
+      <xs:documentation>
+        <usedBy>Reusable address type</usedBy>
+      </xs:documentation>
+    </xs:annotation>
     <xs:sequence>
-      <xs:element name="street" type="xs:string" default="123 Example Street"/>
-      <xs:element name="city" type="xs:string" default="Anytown"/>
-      <xs:element name="state" type="xs:string" minOccurs="0" default="CA"/>
-      <xs:element name="postalCode" type="xs:string" default="12345"/>
-      <xs:element name="country" type="xs:string" default="USA"/>
+      <xs:element name="street" type="xs:string" default="123 Example Street">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Street address" />
+            <format value="an..35" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="city" type="xs:string" default="Anytown">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="City" />
+            <format value="an..35" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="state" type="xs:string" minOccurs="0" default="CA">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="State or region" />
+            <format value="an..35" />
+            <optionality value="O" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="postalCode" type="xs:string" default="12345">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Postal code" />
+            <format value="an..9" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="country" type="xs:string" default="USA">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Country" />
+            <format value="a2" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
     </xs:sequence>
   </xs:complexType>
 
-  <!-- Reusable person/contact type (elements have default sample data) -->
   <xs:complexType name="PersonType">
+    <xs:annotation>
+      <xs:documentation>
+        <usedBy>Reusable person/contact type</usedBy>
+      </xs:documentation>
+    </xs:annotation>
     <xs:sequence>
-      <xs:element name="firstName" type="xs:string" default="Jane"/>
-      <xs:element name="lastName" type="xs:string" default="Doe"/>
-      <xs:element name="email" type="xs:string" default="jane.doe@example.com"/>
-      <xs:element name="phone" type="xs:string" minOccurs="0" default="+1-555-0100"/>
+      <xs:element name="firstName" type="xs:string" default="Jane">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="First name" />
+            <format value="an..35" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="lastName" type="xs:string" default="Doe">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Last name" />
+            <format value="an..35" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="email" type="xs:string" default="jane.doe@example.com">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Email address" />
+            <format value="an..256" />
+            <optionality value="R" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
+      <xs:element name="phone" type="xs:string" minOccurs="0" default="+1-555-0100">
+        <xs:annotation>
+          <xs:documentation>
+            <description value="Phone number" />
+            <format value="an..35" />
+            <optionality value="O" />
+          </xs:documentation>
+        </xs:annotation>
+      </xs:element>
     </xs:sequence>
   </xs:complexType>
 
