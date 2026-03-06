@@ -1,9 +1,14 @@
 """XSD schema parsing and type resolution."""
 
+import os
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 XS = "http://www.w3.org/2001/XMLSchema"
+
+# Set to True to print include resolution (e.g. XSDTHING_DEBUG=1 ./xsd2sample.sh ...)
+_debug = os.environ.get("XSDTHING_DEBUG", "").lower() in ("1", "yes", "true")
 
 
 def get_tag(elem, default=None):
@@ -20,6 +25,7 @@ def get_text(elem, default=""):
 
 def parse_schema(path: Path, base_dir: Path, types: dict, groups: dict, elements: dict, target_ns: dict):
     """Parse an XSD file and merge types, groups, elements. Resolve includes."""
+    path = path.resolve()
     tree = ET.parse(path)
     root = tree.getroot()
 
@@ -31,8 +37,15 @@ def parse_schema(path: Path, base_dir: Path, types: dict, groups: dict, elements
         loc = inc.get("schemaLocation")
         if not loc:
             continue
-        included = base_dir / loc
-        if included.exists() and included not in target_ns:
+        # Resolve relative to the *including* file's directory (XSD spec: relative to document base URI)
+        included = (path.parent / loc).resolve()
+        if not included.exists():
+            if _debug:
+                print(f"[xsdthing] include ignored (file not found): {loc!r} from {path} -> {included}", file=sys.stderr)
+            continue
+        if _debug:
+            print(f"[xsdthing] include: {path.name} -> {included.name}", file=sys.stderr)
+        if included not in target_ns:
             parse_schema(included, base_dir, types, groups, elements, target_ns)
 
     for ct in root:

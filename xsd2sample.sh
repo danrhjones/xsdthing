@@ -20,17 +20,21 @@ usage() {
   echo "  $0 <schema.xsd> [output.xml]" >&2
   echo "  $0 <folder>" >&2
   echo "  $0 --json-payload [--kafka-topic TOPIC] [--sender S] [--recipient R] <schema.xsd|folder>" >&2
+  echo "  $0 --bruno [--bruno-dir DIR] <folder>           # write Bruno .bru files (POST + JSON body)" >&2
   echo "" >&2
   echo "Options:" >&2
   echo "  --json-payload        Print a compact JSON object (one line) with an embedded, escaped, flattened XML payload." >&2
+  echo "  --bruno               For each message XSD, create a Bruno .bru file (POST, sample URL, JSON body)." >&2
+  echo "  --bruno-dir DIR       Directory for .bru files (default: bruno). Use with --bruno." >&2
   echo "  --prefix PREFIX       Namespace prefix for targetNamespace (default: ncts)" >&2
   echo "  --kafka-topic TOPIC   kafkaTopicName value (default: transit.transit)" >&2
   echo "  --sender S            messageSender value (default: test)" >&2
   echo "  --recipient R         messageRecipient value (default: test)" >&2
   echo "  -h, --help            Show this help" >&2
 }
-
+ 
 JSON_PAYLOAD=0
+BRUNO_DIR=""
 NS_PREFIX="ncts"
 KAFKA_TOPIC_NAME="transit.transit"
 MESSAGE_SENDER="test"
@@ -41,6 +45,19 @@ while [[ $# -gt 0 ]]; do
     --json-payload)
       JSON_PAYLOAD=1
       shift
+      ;;
+    --bruno)
+      BRUNO_DIR="bruno"
+      shift
+      ;;
+    --bruno-dir)
+      BRUNO_DIR="${2:-bruno}"
+      if [[ -z "$BRUNO_DIR" ]]; then
+        echo "Error: --bruno-dir requires a value" >&2
+        usage
+        exit 1
+      fi
+      shift 2
       ;;
     --prefix)
       NS_PREFIX="${2:-ncts}"
@@ -120,6 +137,45 @@ process_one() {
   XSD_DIR="$(cd "$(dirname "$XSD")" && pwd)"
   XSD_ABS="${XSD_DIR}/$(basename "$XSD")"
 
+  # Bruno-only: create .bru files only when --bruno/--bruno-dir is set. No XML or JSON output.
+  if [[ -n "$BRUNO_DIR" ]]; then
+    tmp_xml="$(mktemp -t xsd2sample.XXXXXX.xml)"
+    trap 'rm -f "$tmp_xml"' RETURN
+    python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" -o "$tmp_xml" &>/dev/null || { echo "Error: Failed to generate XML for $XSD_ABS" >&2; return 1; }
+    xmllint --noout --schema "$XSD_ABS" "$tmp_xml" &>/dev/null || true
+    python3 - "$tmp_xml" "$KAFKA_TOPIC_NAME" "$MESSAGE_SENDER" "$MESSAGE_RECIPIENT" "$BRUNO_DIR" "$(basename "$XSD" .xsd)" <<'BRUPY'
+import json, os, re, sys, uuid
+from datetime import datetime
+from xml.etree import ElementTree as ET
+xml_path, topic, sender, recipient, bruno_dir, base_name = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
+with open(xml_path, "r", encoding="utf-8") as f:
+    xml_in = f.read()
+xml_body = re.sub(r'^\s*<\?xml[^?]*\?>\s*', '', xml_in, flags=re.S).strip()
+payload = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>' + re.sub(r'>\s+<', '><', xml_body)
+try:
+    root = ET.fromstring(xml_body)
+    message_type = (root.tag.split("}", 1)[1] if "}" in root.tag else root.tag.split(":")[-1])
+except Exception:
+    message_type = ""
+try:
+    prep_dt = datetime.now().isoformat(timespec="milliseconds")
+except Exception:
+    prep_dt = "2026-02-03T08:27:20.123"
+mid = str(uuid.uuid4())[:35]
+out = {"payload": payload, "kafkaTopicName": topic, "messageType": message_type, "preparationDateAndTime": prep_dt, "messageSender": sender, "messageRecipient": recipient, "messageIdentification": mid, "correlationIdentifier": mid}
+os.makedirs(bruno_dir, exist_ok=True)
+js = json.dumps(out, indent=2, ensure_ascii=False)
+indented = "\n".join("  " + line for line in js.splitlines())
+for label, url_suffix in [("21", "21"), ("24", "24")]:
+    name = f"api {label} {base_name}"
+    path = os.path.join(bruno_dir, f"{name}.bru")
+    url = f"https://example.com/transit/messages/{url_suffix}"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("meta {\n  name: " + name + "\n  type: http\n  seq: 1\n}\n\nhttp {\n  method: POST\n  url: " + url + "\n  body: json\n  auth: none\n}\n\nbody:json {\n" + indented + "\n}\n")
+BRUPY
+    return 0
+  fi
+
   if [[ "$JSON_PAYLOAD" -eq 1 ]]; then
     # Generate to stdout so we can embed it into JSON.
     # We still validate via a temp file to preserve current behavior.
@@ -138,8 +194,10 @@ process_one() {
 
     # Wrap the validated XML as compact JSON with the required declaration and flattening.
     # Pass temp file path as arg so we read XML from file (stdin is the heredoc script).
-    python3 - "$tmp_xml" "$KAFKA_TOPIC_NAME" "$MESSAGE_SENDER" "$MESSAGE_RECIPIENT" <<'PY'
+    # When BRUNO_DIR is set, pass it and base name; Python will write a .bru file instead of printing.
+    python3 - "$tmp_xml" "$KAFKA_TOPIC_NAME" "$MESSAGE_SENDER" "$MESSAGE_RECIPIENT" ${BRUNO_DIR:+"$BRUNO_DIR" "$(basename "$XSD" .xsd)"} <<'PY'
 import json
+import os
 import re
 import sys
 import uuid
@@ -150,6 +208,8 @@ xml_path = sys.argv[1]
 topic = sys.argv[2]
 sender = sys.argv[3]
 recipient = sys.argv[4]
+bruno_dir = sys.argv[5] if len(sys.argv) >= 6 else None
+base_name = sys.argv[6] if len(sys.argv) >= 7 else None
 
 with open(xml_path, "r", encoding="utf-8") as f:
     xml_in = f.read()
@@ -193,7 +253,32 @@ out = {
     "correlationIdentifier": cid,
 }
 
-print(json.dumps(out, indent=2, ensure_ascii=False))
+if bruno_dir and base_name:
+    os.makedirs(bruno_dir, exist_ok=True)
+    bru_path = os.path.join(bruno_dir, f"api - {base_name}.bru")
+    json_str = json.dumps(out, indent=2, ensure_ascii=False)
+    json_indented = "\n".join("  " + line for line in json_str.splitlines())
+    bru_content = f"""meta {{
+  name: api - {base_name}
+  type: http
+  seq: 1
+}}
+
+http {{
+  method: POST
+  url: https://example.com/transit/messages
+  body: json
+  auth: none
+}}
+
+body:json {{
+{json_indented}
+}}
+"""
+    with open(bru_path, "w", encoding="utf-8") as f:
+        f.write(bru_content)
+else:
+    print(json.dumps(out, indent=2, ensure_ascii=False))
 PY
 
     return 0
@@ -242,15 +327,22 @@ if [[ -d "$ARG" ]]; then
     else
       ((fail++)) || true
     fi
-    if [[ "$JSON_PAYLOAD" -ne 1 ]]; then
+    if [[ "$JSON_PAYLOAD" -ne 1 ]] && [[ -z "$BRUNO_DIR" ]]; then
       echo "---"
+    fi
+    if [[ -n "$BRUNO_DIR" ]]; then
+      echo "  api 21 $base.bru, api 24 $base.bru"
     fi
   done
   if [[ $count -eq 0 ]]; then
     echo "No .xsd files found in $DIR" >&2
     exit 1
   fi
-  echo "Done: $pass passed, $fail failed (of $count schemas)."
+  if [[ -n "$BRUNO_DIR" ]]; then
+    echo "Done: $(( pass * 2 )) .bru files ($pass schemas) written to $BRUNO_DIR/"
+  else
+    echo "Done: $pass passed, $fail failed (of $count schemas)."
+  fi
   [[ $fail -eq 0 ]]
 elif [[ -f "$ARG" ]]; then
   # Single file
