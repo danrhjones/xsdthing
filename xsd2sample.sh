@@ -166,7 +166,7 @@ out = {"payload": payload, "kafkaTopicName": topic, "messageType": message_type,
 os.makedirs(bruno_dir, exist_ok=True)
 js = json.dumps(out, indent=2, ensure_ascii=False)
 indented = "\n".join("  " + line for line in js.splitlines())
-for label, url_suffix in [("21", "21"), ("24", "24")]:
+for label, url_suffix in [("21", "iegb"), ("29", "iexi")]:
     name = f"api {label} {base_name}"
     path = os.path.join(bruno_dir, f"{name}.bru")
     url = f"https://example.com/transit/messages/{url_suffix}"
@@ -331,7 +331,7 @@ if [[ -d "$ARG" ]]; then
       echo "---"
     fi
     if [[ -n "$BRUNO_DIR" ]]; then
-      echo "  api 21 $base.bru, api 24 $base.bru"
+      echo "  api 21 $base.bru, api 29 $base.bru"
     fi
   done
   if [[ $count -eq 0 ]]; then
