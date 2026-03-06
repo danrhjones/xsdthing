@@ -36,6 +36,30 @@ def generate_complex_type(ct_elem, type_ns, types, groups, elements, target_ns, 
             else:
                 out.append(("__attr__", aname, "sample"))
 
+    # Handle xs:complexContent/xs:extension: generate base type content then extension content
+    complex_content = ct_elem.find(f"{{{XS}}}complexContent")
+    if complex_content is not None:
+        extension = complex_content.find(f"{{{XS}}}extension")
+        if extension is not None:
+            base_ref = extension.get("base")
+            if base_ref:
+                base_elem, base_ns = resolve_type_ref(base_ref, {}, types)
+                if base_elem and get_tag(base_elem) == "complexType":
+                    out.extend(generate_complex_type(base_elem, base_ns or type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level))
+            for container in extension:
+                ctag = get_tag(container)
+                if ctag == "sequence":
+                    for item in container:
+                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                elif ctag == "all":
+                    for item in container:
+                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                elif ctag == "choice":
+                    for item in container:
+                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                        break
+            return out
+
     for container in ct_elem:
         ctag = get_tag(container)
         if ctag == "sequence":
