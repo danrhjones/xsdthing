@@ -1,7 +1,7 @@
 """Generate XML content tree from XSD types and particles."""
 
 from xsdthing.schema import get_tag, resolve_type_ref, XS
-from xsdthing.simple_values import simple_type_sample
+from xsdthing.simple_values import preparation_date_time_value, simple_type_sample
 
 
 def generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level=0):
@@ -73,6 +73,12 @@ def process_particle(particle, types, groups, elements, type_ns, target_ns, elem
                         inner = generate_for_type(type_elem, el_ns or type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level + 1)
                         return [(name, inner, {}, element_form_qualified)]
         if name:
+            # Ensure generated XML has a preparationDateAndTime when schema requires it.
+            # Use current system datetime in XSD dateTime format; fallback to fixed sample.
+            if name == "preparationDateAndTime":
+                inner = [("__text__", preparation_date_time_value(), {}, False)]
+                return [(name, inner, {}, element_form_qualified)]
+
             type_ref = particle.get("type")
             default = particle.get("default") or particle.get("fixed")
             if type_ref:

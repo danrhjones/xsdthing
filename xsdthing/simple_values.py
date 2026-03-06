@@ -3,6 +3,10 @@ Sample values for XSD simple types.
 Pattern rules are applied in order; first match wins.
 """
 
+from __future__ import annotations
+
+from datetime import datetime
+
 from xsdthing.schema import get_tag, XS
 
 
@@ -44,6 +48,20 @@ BASE_SAMPLES = {
     "NCTS-P5_DeclarationGoodsItemNumberType": "1",
     "Base64Binary": "AQIDBA==",
 }
+
+DEFAULT_PREPARATION_DATETIME = "2025-03-05T12:00:00"
+
+
+def preparation_date_time_value() -> str:
+    """
+    Current system date/time in XSD dateTime format (seconds precision).
+    Falls back to DEFAULT_PREPARATION_DATETIME if anything goes wrong.
+    """
+    try:
+        # Match example format: 2025-03-05T12:00:00 (no timezone, seconds precision)
+        return datetime.now().replace(microsecond=0).isoformat()
+    except Exception:
+        return DEFAULT_PREPARATION_DATETIME
 
 
 def _pattern_matches(pv: str, *substrings: str) -> bool:
