@@ -179,7 +179,7 @@ try:
 except Exception:
     prep_dt = "2026-02-03T08:27:20.123"
 
-mid = str(uuid.uuid4())
+mid = str(uuid.uuid4())[:35]
 cid = mid
 
 out = {
