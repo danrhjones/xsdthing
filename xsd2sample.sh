@@ -131,7 +131,8 @@ process_one() {
     fi
 
     # Wrap the validated XML as compact JSON with the required declaration and flattening.
-    python3 - "$KAFKA_TOPIC_NAME" "$MESSAGE_SENDER" "$MESSAGE_RECIPIENT" <"$tmp_xml" <<'PY'
+    # Pass temp file path as arg so we read XML from file (stdin is the heredoc script).
+    python3 - "$tmp_xml" "$KAFKA_TOPIC_NAME" "$MESSAGE_SENDER" "$MESSAGE_RECIPIENT" <<'PY'
 import json
 import re
 import sys
@@ -139,10 +140,13 @@ import uuid
 from datetime import datetime
 from xml.etree import ElementTree as ET
 
-topic = sys.argv[1]
-sender = sys.argv[2]
-recipient = sys.argv[3]
-xml_in = sys.stdin.read()
+xml_path = sys.argv[1]
+topic = sys.argv[2]
+sender = sys.argv[3]
+recipient = sys.argv[4]
+
+with open(xml_path, "r", encoding="utf-8") as f:
+    xml_in = f.read()
 
 xml_decl = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
 
