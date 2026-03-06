@@ -2,8 +2,10 @@
 #
 # Generate sample XML instance(s) from XSD schema(s) and validate.
 # Usage:
-#   ./xsd2sample.sh <schema.xsd> [output.xml]   # single file
-#   ./xsd2sample.sh <folder>                    # all .xsd in folder
+#   ./xsd2sample.sh <schema.xsd> [output.xml]              # single file
+#   ./xsd2sample.sh <folder>                               # all .xsd in folder
+#   ./xsd2sample.sh --json-payload <schema.xsd>            # emit compact JSON with embedded XML
+#   ./xsd2sample.sh --json-payload <folder>                # emit one JSON per schema (one per line)
 #
 # Single file: if output.xml is omitted, writes <basename>.xml in the
 # same directory as this script.
@@ -13,10 +15,75 @@
 
 set -e
 
+usage() {
+  echo "Usage:" >&2
+  echo "  $0 <schema.xsd> [output.xml]" >&2
+  echo "  $0 <folder>" >&2
+  echo "  $0 --json-payload [--kafka-topic TOPIC] [--sender S] [--recipient R] <schema.xsd|folder>" >&2
+  echo "" >&2
+  echo "Options:" >&2
+  echo "  --json-payload        Print a compact JSON object (one line) with an embedded, escaped, flattened XML payload." >&2
+  echo "  --kafka-topic TOPIC   kafkaTopicName value (default: transit.transit)" >&2
+  echo "  --sender S            messageSender value (default: test)" >&2
+  echo "  --recipient R         messageRecipient value (default: test)" >&2
+  echo "  -h, --help            Show this help" >&2
+}
+
+JSON_PAYLOAD=0
+KAFKA_TOPIC_NAME="transit.transit"
+MESSAGE_SENDER="test"
+MESSAGE_RECIPIENT="test"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json-payload)
+      JSON_PAYLOAD=1
+      shift
+      ;;
+    --kafka-topic)
+      KAFKA_TOPIC_NAME="${2:-}"
+      if [[ -z "$KAFKA_TOPIC_NAME" ]]; then
+        echo "Error: --kafka-topic requires a value" >&2
+        usage
+        exit 1
+      fi
+      shift 2
+      ;;
+    --sender)
+      MESSAGE_SENDER="${2:-}"
+      if [[ -z "$MESSAGE_SENDER" ]]; then
+        echo "Error: --sender requires a value" >&2
+        usage
+        exit 1
+      fi
+      shift 2
+      ;;
+    --recipient)
+      MESSAGE_RECIPIENT="${2:-}"
+      if [[ -z "$MESSAGE_RECIPIENT" ]]; then
+        echo "Error: --recipient requires a value" >&2
+        usage
+        exit 1
+      fi
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --*)
+      echo "Error: Unknown option: $1" >&2
+      usage
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 if [[ $# -lt 1 ]]; then
-  echo "Usage: $0 <schema.xsd> [output.xml]  OR  $0 <folder>" >&2
-  echo "  Single file: generate one XML from the XSD and validate." >&2
-  echo "  Folder: process every .xsd in the directory; output each to <basename>.xml next to this script." >&2
+  usage
   exit 1
 fi
 
@@ -42,9 +109,85 @@ process_one() {
   local XSD="$1"
   local OUTPUT="${2:-}"
   local XSD_DIR XSD_ABS BASE
+  local tmp_xml
 
   XSD_DIR="$(cd "$(dirname "$XSD")" && pwd)"
   XSD_ABS="${XSD_DIR}/$(basename "$XSD")"
+
+  if [[ "$JSON_PAYLOAD" -eq 1 ]]; then
+    # Generate to stdout so we can embed it into JSON.
+    # We still validate via a temp file to preserve current behavior.
+    tmp_xml="$(mktemp -t xsd2sample.XXXXXX.xml)"
+    trap 'rm -f "$tmp_xml"' RETURN
+
+    if ! python3 "$GENERATOR" "$XSD_ABS" -o "$tmp_xml"; then
+      echo "Error: Failed to generate XML for $XSD_ABS" >&2
+      return 1
+    fi
+
+    if ! xmllint --noout --schema "$XSD_ABS" "$tmp_xml"; then
+      echo "Error: Generated XML did not validate for $XSD_ABS" >&2
+      return 1
+    fi
+
+    # Wrap the validated XML as compact JSON with the required declaration and flattening.
+    python3 - "$KAFKA_TOPIC_NAME" "$MESSAGE_SENDER" "$MESSAGE_RECIPIENT" <"$tmp_xml" <<'PY'
+import json
+import re
+import sys
+import uuid
+from datetime import datetime
+from xml.etree import ElementTree as ET
+
+topic = sys.argv[1]
+sender = sys.argv[2]
+recipient = sys.argv[3]
+xml_in = sys.stdin.read()
+
+xml_decl = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>'
+
+# Strip any existing XML declaration.
+xml_body = re.sub(r'^\s*<\?xml[^?]*\?>\s*', '', xml_in, flags=re.S).strip()
+
+# Flatten: remove whitespace between tags (preserve whitespace inside text/attributes).
+xml_flat = re.sub(r'>\s+<', '><', xml_body)
+
+payload = xml_decl + xml_flat
+
+try:
+    root = ET.fromstring(xml_body)
+    tag = root.tag
+    if tag.startswith("{") and "}" in tag:
+        message_type = tag.split("}", 1)[1]
+    else:
+        message_type = tag.split(":")[-1]
+except Exception:
+    message_type = ""
+
+try:
+    prep_dt = datetime.now().isoformat(timespec="milliseconds")
+except Exception:
+    prep_dt = "2026-02-03T08:27:20.123"
+
+mid = str(uuid.uuid4())
+cid = mid
+
+out = {
+    "payload": payload,
+    "kafkaTopicName": topic,
+    "messageType": message_type,
+    "preparationDateAndTime": prep_dt,
+    "messageSender": sender,
+    "messageRecipient": recipient,
+    "messageIdentification": mid,
+    "correlationIdentifier": cid,
+}
+
+print(json.dumps(out, separators=(",", ":"), ensure_ascii=False))
+PY
+
+    return 0
+  fi
 
   if [[ -z "$OUTPUT" ]]; then
     BASE="$(basename "$XSD" .xsd)"
@@ -89,7 +232,9 @@ if [[ -d "$ARG" ]]; then
     else
       ((fail++)) || true
     fi
-    echo "---"
+    if [[ "$JSON_PAYLOAD" -ne 1 ]]; then
+      echo "---"
+    fi
   done
   if [[ $count -eq 0 ]]; then
     echo "No .xsd files found in $DIR" >&2
