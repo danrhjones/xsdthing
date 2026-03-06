@@ -23,6 +23,7 @@ usage() {
   echo "" >&2
   echo "Options:" >&2
   echo "  --json-payload        Print a compact JSON object (one line) with an embedded, escaped, flattened XML payload." >&2
+  echo "  --prefix PREFIX       Namespace prefix for targetNamespace (default: ncts)" >&2
   echo "  --kafka-topic TOPIC   kafkaTopicName value (default: transit.transit)" >&2
   echo "  --sender S            messageSender value (default: test)" >&2
   echo "  --recipient R         messageRecipient value (default: test)" >&2
@@ -30,6 +31,7 @@ usage() {
 }
 
 JSON_PAYLOAD=0
+NS_PREFIX="ncts"
 KAFKA_TOPIC_NAME="transit.transit"
 MESSAGE_SENDER="test"
 MESSAGE_RECIPIENT="test"
@@ -39,6 +41,10 @@ while [[ $# -gt 0 ]]; do
     --json-payload)
       JSON_PAYLOAD=1
       shift
+      ;;
+    --prefix)
+      NS_PREFIX="${2:-ncts}"
+      shift 2
       ;;
     --kafka-topic)
       KAFKA_TOPIC_NAME="${2:-}"
@@ -120,7 +126,7 @@ process_one() {
     tmp_xml="$(mktemp -t xsd2sample.XXXXXX.xml)"
     trap 'rm -f "$tmp_xml"' RETURN
 
-    if ! python3 "$GENERATOR" "$XSD_ABS" -o "$tmp_xml"; then
+    if ! python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" -o "$tmp_xml"; then
       echo "Error: Failed to generate XML for $XSD_ABS" >&2
       return 1
     fi
@@ -187,7 +193,7 @@ out = {
     "correlationIdentifier": cid,
 }
 
-print(json.dumps(out, separators=(",", ":"), ensure_ascii=False))
+print(json.dumps(out, indent=2, ensure_ascii=False))
 PY
 
     return 0
@@ -199,7 +205,7 @@ PY
   fi
 
   echo "Generating sample XML from $XSD_ABS ..."
-  if ! python3 "$GENERATOR" "$XSD_ABS" -o "$OUTPUT"; then
+  if ! python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" -o "$OUTPUT"; then
     echo "Error: Failed to generate $OUTPUT" >&2
     return 1
   fi

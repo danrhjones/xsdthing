@@ -24,6 +24,13 @@ def main():
     parser.add_argument("xsd", type=Path, help="Path to the XSD file")
     parser.add_argument("-o", "--output", type=Path, help="Output XML file (default: stdout)")
     parser.add_argument("--root", type=str, help="Root element name (default: first global element)")
+    parser.add_argument(
+        "--prefix",
+        type=str,
+        default="ncts",
+        metavar="PREFIX",
+        help="Namespace prefix for targetNamespace in output (default: ncts)",
+    )
     args = parser.parse_args()
 
     xsd_path = args.xsd.resolve()
@@ -71,12 +78,13 @@ def main():
     element_form_qualified = eq == "qualified"
 
     content = generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified)
-    root_node = build_tree(root_el_name, content, ns_uri, "ncts" if ns_uri else None, True)
-    body = serialize(root_node, ns_uri, "ncts" if ns_uri else None, True)
+    ns_prefix = args.prefix if ns_uri else None
+    root_node = build_tree(root_el_name, content, ns_uri, ns_prefix, True)
+    body = serialize(root_node, ns_uri, ns_prefix, True)
 
     decl = '<?xml version="1.0" encoding="UTF-8"?>\n'
-    if ns_uri:
-        body = body.replace(f"<ncts:{root_el_name}", f'<ncts:{root_el_name} xmlns:ncts="' + ns_uri + '"', 1)
+    if ns_uri and ns_prefix:
+        body = body.replace(f"<{ns_prefix}:{root_el_name}", f'<{ns_prefix}:{root_el_name} xmlns:{ns_prefix}="' + ns_uri + '"', 1)
     xml_out = decl + body + "\n"
 
     if args.output:
