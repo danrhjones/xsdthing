@@ -171,7 +171,7 @@ for label, url_suffix in [("21", "iegb"), ("29", "iexi")]:
     path = os.path.join(bruno_dir, f"{name}.bru")
     url = f"https://example.com/transit/messages/{url_suffix}"
     with open(path, "w", encoding="utf-8") as f:
-        f.write("meta {\n  name: " + name + "\n  type: http\n  seq: 1\n}\n\nhttp {\n  method: POST\n  url: " + url + "\n  body: json\n  auth: none\n}\n\nbody:json {\n" + indented + "\n}\n")
+        f.write("meta {\n  name: " + name + "\n  type: http\n  seq: 1\n}\n\nhttp {\n  method: POST\n  url: " + url + "\n  headers: {\n    x-correlation-id: {{$randomUUID}}\n    x-conversation-id: {{$randomUUID}}\n    date: {{timestamp}}\n  }\n  body: json\n  auth: none\n}\n\nbody:json {\n" + indented + "\n}\n")
 BRUPY
     return 0
   fi

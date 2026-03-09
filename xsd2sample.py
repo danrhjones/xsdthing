@@ -77,7 +77,7 @@ def main():
     eq = schema.get("elementFormDefault", "unqualified")
     element_form_qualified = eq == "qualified"
 
-    content = generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified)
+    content = generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, root_element_name=root_el_name)
     ns_prefix = args.prefix if ns_uri else None
     root_node = build_tree(root_el_name, content, ns_uri, ns_prefix, True)
     body = serialize(root_node, ns_uri, ns_prefix, True)

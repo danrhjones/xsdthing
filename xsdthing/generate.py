@@ -4,19 +4,19 @@ from xsdthing.schema import get_tag, resolve_type_ref, XS
 from xsdthing.simple_values import preparation_date_time_value, simple_type_sample
 
 
-def generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level=0):
+def generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level=0, root_element_name=None):
     """Generate XML content for a type. Returns list of (tag, content_or_children, attrs, use_prefix)."""
     if type_elem is None:
         return []
     tag = get_tag(type_elem)
     if tag == "complexType":
-        return generate_complex_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level)
+        return generate_complex_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level, root_element_name)
     if tag == "simpleType":
         return [("__text__", simple_type_sample(type_elem, types), {}, False)]
     return []
 
 
-def generate_complex_type(ct_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level):
+def generate_complex_type(ct_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level, root_element_name=None):
     out = []
     for attr in ct_elem.findall(f"{{{XS}}}attribute"):
         aname = attr.get("name")
@@ -45,18 +45,18 @@ def generate_complex_type(ct_elem, type_ns, types, groups, elements, target_ns, 
             if base_ref:
                 base_elem, base_ns = resolve_type_ref(base_ref, {}, types)
                 if base_elem and get_tag(base_elem) == "complexType":
-                    out.extend(generate_complex_type(base_elem, base_ns or type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level))
+                    out.extend(generate_complex_type(base_elem, base_ns or type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level, root_element_name))
             for container in extension:
                 ctag = get_tag(container)
                 if ctag == "sequence":
                     for item in container:
-                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level, root_element_name))
                 elif ctag == "all":
                     for item in container:
-                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level, root_element_name))
                 elif ctag == "choice":
                     for item in container:
-                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                        out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level, root_element_name))
                         break
             return out
 
@@ -64,18 +64,18 @@ def generate_complex_type(ct_elem, type_ns, types, groups, elements, target_ns, 
         ctag = get_tag(container)
         if ctag == "sequence":
             for item in container:
-                out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level, root_element_name))
         elif ctag == "all":
             for item in container:
-                out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level, root_element_name))
         elif ctag == "choice":
             for item in container:
-                out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level))
+                out.extend(process_particle(item, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level, root_element_name))
                 break
     return out
 
 
-def process_particle(particle, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level):
+def process_particle(particle, types, groups, elements, type_ns, target_ns, element_form_qualified, indent_level, root_element_name=None):
     tag = get_tag(particle)
     min_occurs = int(particle.get("minOccurs", 1))
     if min_occurs == 0 and tag == "element":
@@ -94,13 +94,16 @@ def process_particle(particle, types, groups, elements, type_ns, target_ns, elem
                 if type_ref:
                     type_elem, _ = resolve_type_ref(type_ref, {}, types)
                     if type_elem:
-                        inner = generate_for_type(type_elem, el_ns or type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level + 1)
+                        inner = generate_for_type(type_elem, el_ns or type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level + 1, root_element_name)
                         return [(name, inner, {}, element_form_qualified)]
         if name:
             # Ensure generated XML has a preparationDateAndTime when schema requires it.
-            # Use current system datetime in XSD dateTime format; fallback to fixed sample.
             if name == "preparationDateAndTime":
                 inner = [("__text__", preparation_date_time_value(), {}, False)]
+                return [(name, inner, {}, element_form_qualified)]
+            # Use actual root message type (e.g. CC029C) instead of first enum value (CC004C).
+            if name == "messageType" and root_element_name:
+                inner = [("__text__", root_element_name, {}, False)]
                 return [(name, inner, {}, element_form_qualified)]
 
             type_ref = particle.get("type")
@@ -108,7 +111,7 @@ def process_particle(particle, types, groups, elements, type_ns, target_ns, elem
             if type_ref:
                 type_elem, _ = resolve_type_ref(type_ref, {}, types)
                 if type_elem:
-                    inner = generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level + 1)
+                    inner = generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, indent_level + 1, root_element_name)
                 else:
                     inner = [("__text__", default or "sample", {}, False)]
             else:
@@ -123,10 +126,10 @@ def process_particle(particle, types, groups, elements, type_ns, target_ns, elem
             result = []
             for seq in gr_elem.findall(f".//{{{XS}}}sequence"):
                 for item in seq:
-                    result.extend(process_particle(item, types, groups, elements, gr_ns or type_ns, target_ns, element_form_qualified, indent_level + 1))
+                    result.extend(process_particle(item, types, groups, elements, gr_ns or type_ns, target_ns, element_form_qualified, indent_level + 1, root_element_name))
             for ch in gr_elem.findall(f".//{{{XS}}}choice"):
                 for item in ch:
-                    result.extend(process_particle(item, types, groups, elements, gr_ns or type_ns, target_ns, element_form_qualified, indent_level + 1))
+                    result.extend(process_particle(item, types, groups, elements, gr_ns or type_ns, target_ns, element_form_qualified, indent_level + 1, root_element_name))
                     break
             return result
     return []
