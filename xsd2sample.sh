@@ -30,6 +30,7 @@ usage() {
   echo "  --kafka-topic TOPIC   kafkaTopicName value (default: transit.transit)" >&2
   echo "  --sender S            messageSender value (default: test)" >&2
   echo "  --recipient R         messageRecipient value (default: test)" >&2
+  echo "  --size-mb MB          Approximate XML size in MB (supports fractions, e.g. 0.25)" >&2
   echo "  -h, --help            Show this help" >&2
 }
  
@@ -39,6 +40,7 @@ NS_PREFIX="ncts"
 KAFKA_TOPIC_NAME="transit.transit"
 MESSAGE_SENDER="test"
 MESSAGE_RECIPIENT="test"
+TARGET_SIZE_MB=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -90,6 +92,15 @@ while [[ $# -gt 0 ]]; do
       fi
       shift 2
       ;;
+    --size-mb)
+      TARGET_SIZE_MB="${2:-}"
+      if [[ -z "$TARGET_SIZE_MB" ]]; then
+        echo "Error: --size-mb requires a value" >&2
+        usage
+        exit 1
+      fi
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -133,6 +144,11 @@ process_one() {
   local OUTPUT="${2:-}"
   local XSD_DIR XSD_ABS BASE
   local tmp_xml
+  local size_args=()
+
+  if [[ -n "$TARGET_SIZE_MB" ]]; then
+    size_args=(--size-mb "$TARGET_SIZE_MB")
+  fi
 
   XSD_DIR="$(cd "$(dirname "$XSD")" && pwd)"
   XSD_ABS="${XSD_DIR}/$(basename "$XSD")"
@@ -141,7 +157,7 @@ process_one() {
   if [[ -n "$BRUNO_DIR" ]]; then
     tmp_xml="$(mktemp -t xsd2sample.XXXXXX.xml)"
     trap 'rm -f "$tmp_xml"' RETURN
-    python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" -o "$tmp_xml" &>/dev/null || { echo "Error: Failed to generate XML for $XSD_ABS" >&2; return 1; }
+    python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" "${size_args[@]}" -o "$tmp_xml" &>/dev/null || { echo "Error: Failed to generate XML for $XSD_ABS" >&2; return 1; }
     xmllint --noout --schema "$XSD_ABS" "$tmp_xml" &>/dev/null || true
     python3 - "$tmp_xml" "$KAFKA_TOPIC_NAME" "$MESSAGE_SENDER" "$MESSAGE_RECIPIENT" "$BRUNO_DIR" "$(basename "$XSD" .xsd)" <<'BRUPY'
 import json, os, re, sys, uuid
@@ -182,7 +198,7 @@ BRUPY
     tmp_xml="$(mktemp -t xsd2sample.XXXXXX.xml)"
     trap 'rm -f "$tmp_xml"' RETURN
 
-    if ! python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" -o "$tmp_xml"; then
+    if ! python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" "${size_args[@]}" -o "$tmp_xml"; then
       echo "Error: Failed to generate XML for $XSD_ABS" >&2
       return 1
     fi
@@ -290,7 +306,7 @@ PY
   fi
 
   echo "Generating sample XML from $XSD_ABS ..."
-  if ! python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" -o "$OUTPUT"; then
+  if ! python3 "$GENERATOR" "$XSD_ABS" --prefix "$NS_PREFIX" "${size_args[@]}" -o "$OUTPUT"; then
     echo "Error: Failed to generate $OUTPUT" >&2
     return 1
   fi

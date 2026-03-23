@@ -5,6 +5,7 @@ Handles xs:include (same directory), complex/simple types, groups, and defaults.
 """
 
 import argparse
+import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -19,6 +20,37 @@ from xsdthing import (
 )
 
 
+def pad_xml_to_target_size(xml_text: str, target_mb: float) -> str:
+    """
+    Pad XML with schema-neutral comments until it reaches an approximate size.
+    Padding is inserted before the root closing tag so the document remains valid.
+    """
+    if target_mb <= 0:
+        return xml_text
+
+    target_bytes = int(target_mb * 1024 * 1024)
+    current_bytes = len(xml_text.encode("utf-8"))
+    if current_bytes >= target_bytes:
+        return xml_text
+
+    missing = target_bytes - current_bytes
+    # Reserve wrapper/newlines overhead and split into multiple comment lines.
+    chunk_size = 4000
+    needed_payload = max(0, missing - 16)
+    chunks = []
+    remaining = needed_payload
+    while remaining > 0:
+        n = min(chunk_size, remaining)
+        chunks.append("x" * n)
+        remaining -= n
+
+    pad_block = "".join(f"\n<!--{chunk}-->" for chunk in chunks)
+    match = re.search(r"</[^>]+>\s*$", xml_text)
+    if not match:
+        return xml_text
+    return xml_text[: match.start()] + pad_block + "\n" + xml_text[match.start() :]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate sample XML from XSD")
     parser.add_argument("xsd", type=Path, help="Path to the XSD file")
@@ -30,6 +62,13 @@ def main():
         default="ncts",
         metavar="PREFIX",
         help="Namespace prefix for targetNamespace in output (default: ncts)",
+    )
+    parser.add_argument(
+        "--size-mb",
+        type=float,
+        default=0.0,
+        metavar="MB",
+        help="Approximate output XML size in MB (supports fractions, e.g. 0.25)",
     )
     args = parser.parse_args()
 
@@ -86,6 +125,7 @@ def main():
     if ns_uri and ns_prefix:
         body = body.replace(f"<{ns_prefix}:{root_el_name}", f'<{ns_prefix}:{root_el_name} xmlns:{ns_prefix}="' + ns_uri + '"', 1)
     xml_out = decl + body + "\n"
+    xml_out = pad_xml_to_target_size(xml_out, args.size_mb)
 
     if args.output:
         args.output.write_text(xml_out, encoding="utf-8")

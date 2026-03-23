@@ -40,9 +40,16 @@ You can call the generator directly:
 python3 xsd2sample.py order.xsd -o order.xml
 python3 xsd2sample.py order.xsd                    # print XML to stdout
 python3 xsd2sample.py order.xsd --root CC004C -o out.xml
+python3 xsd2sample.py order.xsd --size-mb 0.25 -o out.xml
 ```
 
-Options: `-o/--output` (output file), `--root` (root element name). Validation is not run when using the Python script alone; use the shell script for generate + validate.
+Options: `-o/--output` (output file), `--root` (root element name), `--size-mb` (approximate XML size in MB; supports fractions like `0.25`). Validation is not run when using the Python script alone; use the shell script for generate + validate.
+
+For the shell wrapper you can also pass `--size-mb`:
+
+```bash
+./xsd2sample.sh --size-mb 0.25 ddtna/cc170c.xsd
+```
 
 ## Schema layout (this repo)
 
