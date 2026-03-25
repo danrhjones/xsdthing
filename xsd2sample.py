@@ -5,7 +5,6 @@ Handles xs:include (same directory), complex/simple types, groups, and defaults.
 """
 
 import argparse
-import re
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -20,35 +19,13 @@ from xsdthing import (
 )
 
 
-def pad_xml_to_target_size(xml_text: str, target_mb: float) -> str:
-    """
-    Pad XML with schema-neutral comments until it reaches an approximate size.
-    Padding is inserted before the root closing tag so the document remains valid.
-    """
-    if target_mb <= 0:
-        return xml_text
-
-    target_bytes = int(target_mb * 1024 * 1024)
-    current_bytes = len(xml_text.encode("utf-8"))
-    if current_bytes >= target_bytes:
-        return xml_text
-
-    missing = target_bytes - current_bytes
-    # Reserve wrapper/newlines overhead and split into multiple comment lines.
-    chunk_size = 4000
-    needed_payload = max(0, missing - 16)
-    chunks = []
-    remaining = needed_payload
-    while remaining > 0:
-        n = min(chunk_size, remaining)
-        chunks.append("x" * n)
-        remaining -= n
-
-    pad_block = "".join(f"\n<!--{chunk}-->" for chunk in chunks)
-    match = re.search(r"</[^>]+>\s*$", xml_text)
-    if not match:
-        return xml_text
-    return xml_text[: match.start()] + pad_block + "\n" + xml_text[match.start() :]
+def render_xml(content, root_el_name, ns_uri, ns_prefix):
+    root_node = build_tree(root_el_name, content, ns_uri, ns_prefix, True)
+    body = serialize(root_node, ns_uri, ns_prefix, True)
+    decl = '<?xml version="1.0" encoding="UTF-8"?>\n'
+    if ns_uri and ns_prefix:
+        body = body.replace(f"<{ns_prefix}:{root_el_name}", f'<{ns_prefix}:{root_el_name} xmlns:{ns_prefix}="' + ns_uri + '"', 1)
+    return decl + body + "\n"
 
 
 def main():
@@ -116,16 +93,39 @@ def main():
     eq = schema.get("elementFormDefault", "unqualified")
     element_form_qualified = eq == "qualified"
 
-    content = generate_for_type(type_elem, type_ns, types, groups, elements, target_ns, element_form_qualified, root_element_name=root_el_name)
     ns_prefix = args.prefix if ns_uri else None
-    root_node = build_tree(root_el_name, content, ns_uri, ns_prefix, True)
-    body = serialize(root_node, ns_uri, ns_prefix, True)
+    repeat_budget = 1
+    target_bytes = int(args.size_mb * 1024 * 1024) if args.size_mb > 0 else 0
+    xml_out = ""
+    previous_size = -1
 
-    decl = '<?xml version="1.0" encoding="UTF-8"?>\n'
-    if ns_uri and ns_prefix:
-        body = body.replace(f"<{ns_prefix}:{root_el_name}", f'<{ns_prefix}:{root_el_name} xmlns:{ns_prefix}="' + ns_uri + '"', 1)
-    xml_out = decl + body + "\n"
-    xml_out = pad_xml_to_target_size(xml_out, args.size_mb)
+    for _ in range(12):
+        content = generate_for_type(
+            type_elem,
+            type_ns,
+            types,
+            groups,
+            elements,
+            target_ns,
+            element_form_qualified,
+            root_element_name=root_el_name,
+            repeat_budget=repeat_budget,
+        )
+        xml_out = render_xml(content, root_el_name, ns_uri, ns_prefix)
+        current_size = len(xml_out.encode("utf-8"))
+        if target_bytes == 0 or current_size >= target_bytes:
+            break
+        if current_size == previous_size:
+            break
+        previous_size = current_size
+        repeat_budget *= 2
+
+    if target_bytes and len(xml_out.encode("utf-8")) < target_bytes:
+        print(
+            "Warning: Could not reach requested size using repeatable schema nodes only; "
+            "output is the largest generated within maxOccurs constraints.",
+            file=sys.stderr,
+        )
 
     if args.output:
         args.output.write_text(xml_out, encoding="utf-8")
